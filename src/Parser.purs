@@ -8,7 +8,7 @@ module Language.Dot.Parser
   where
 
 import Control.Alternative
-import Data.Array
+import Data.List
 import Language.Dot.Syntax
 import Prelude
 import Text.Parsing.Parser
@@ -18,6 +18,7 @@ import Text.Parsing.Parser.String
 import Text.Parsing.Parser.Token
 
 import Control.Applicative ((<$>), (<*>), (<*), (*>))
+import Control.Lazy (defer, fix)
 import Control.Monad (when)
 import Data.Either (Either)
 import Data.Foldable (class Foldable)
@@ -34,7 +35,7 @@ import Text.Parsing.Parser.Combinators (between) as Parser
 parseDot :: String  -- ^ DOT source code
          -> Either ParseError Graph
 parseDot =
-    runParser (whiteSpace' *> parseGraph) $ preprocess
+    runParser (dotLexer.whiteSpace *> parseGraph) $ preprocess
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
@@ -59,24 +60,24 @@ preprocess file =
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
 parseGraph :: Parser Graph
-parseGraph =
+parseGraph = fix $ \p -> 
     ( Graph <$>
           parseGraphStrictness
       <*> parseGraphDirectedness
       <*> optionMaybe parseId
-      <*> parseStatementList
+      <*> (parseStatementList p)
     )
     <?> "graph"
 
-parseGraphStrictness :: Parser GraphStrictness
+-- parseGraphStrictness :: Parser GraphStrictness
 parseGraphStrictness =
-    ((reserved' "strict" *> pure StrictGraph) <|> pure UnstrictGraph)
+    ((dotLexer.reserved "strict" *> pure StrictGraph) <|> pure UnstrictGraph)
     <?> "graph strictness"
 
-parseGraphDirectedness :: Parser GraphDirectedness
+-- parseGraphDirectedness :: Parser GraphDirectedness
 parseGraphDirectedness =
-    (   (reserved' "graph"   *> pure UndirectedGraph)
-    <|> (reserved' "digraph" *> pure DirectedGraph)
+    (   (dotLexer.reserved "graph"   *> pure UndirectedGraph)
+    <|> (dotLexer.reserved "digraph" *> pure DirectedGraph)
     )
     <?> "graph directedness"
 
@@ -87,17 +88,17 @@ parseGraphDirectedness =
 --   last <- char '.' *> whiteSpace *> pars
 --   return $ DottedList init last
 
-parseStatementList :: Parser (Array Statement)
-parseStatementList = 
-  braces' (parseStatement `endBy` optional semi')
+parseStatementList :: Parser (List Statement) -> Parser (List Statement)
+parseStatementList p = 
+  dotLexer.braces (parseStatement `endBy` optional dotLexer.semi)
     <?> "statement list"
 
-parseStatement :: Parser Statement
-parseStatement =
+parseStatement :: Parser (List Statement) -> Parser Statement
+parseStatement p =
     (   try parseEdgeStatement
     <|> try parseAttributeStatement
     <|> try parseAssignmentStatement
-    <|> try parseSubgraphStatement
+    <|> try (parseSubgraphStatement p)
     <|>     parseNodeStatement
     )
     <?> "statement"
@@ -129,11 +130,11 @@ parseAttributeStatement =
     )
     <?> "attribute statement"
 
-parseAttributeStatementType :: Parser AttributeStatementType
+-- parseAttributeStatementType :: Parser AttributeStatementType
 parseAttributeStatementType =
-    (   (reserved' "graph" *> pure GraphAttributeStatement)
-    <|> (reserved' "node"  *> pure NodeAttributeStatement)
-    <|> (reserved' "edge"  *> pure EdgeAttributeStatement)
+    (   (dotLexer.reserved "graph" *> pure GraphAttributeStatement)
+    <|> (dotLexer.reserved "node"  *> pure NodeAttributeStatement)
+    <|> (dotLexer.reserved "edge"  *> pure EdgeAttributeStatement)
     )
     <?> "attribute statement type"
 
@@ -142,43 +143,43 @@ parseAttributeStatementType =
 parseAssignmentStatement :: Parser Statement
 parseAssignmentStatement =
     ( AssignmentStatement <$>
-      parseId <*> (reservedOp' "=" *> parseId)
+      parseId <*> (dotLexer.reservedOp "=" *> parseId)
     )
     <?> "assignment statement"
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-parseSubgraphStatement :: Parser Statement
-parseSubgraphStatement =
+parseSubgraphStatement :: Parser (List Statement) -> Parser Statement
+parseSubgraphStatement p =
     ( SubgraphStatement <$>
-       parseSubgraph
+       (parseSubgraph p)
     )
     <?> "subgraph statement"
 
-parseSubgraph :: Parser Subgraph
-parseSubgraph =
-    (   try parseNewSubgraph
+parseSubgraph :: Parser (List Statement) -> Parser Subgraph
+parseSubgraph p =
+    (   try (parseNewSubgraph p)
     <|>     parseSubgraphRef
     )
     <?> "subgraph"
 
-parseNewSubgraph :: Parser Subgraph
-parseNewSubgraph =
+parseNewSubgraph :: Parser (List Statement) -> Parser Subgraph
+parseNewSubgraph p =
     ( NewSubgraph <$>
-      (optional (reserved' "subgraph") *> optionMaybe parseId) <*> parseStatementList
+      (optional (dotLexer.reserved "subgraph") *> optionMaybe parseId) <*> (parseStatementList p)
     )
     <?> "new subgraph"
 
 parseSubgraphRef :: Parser Subgraph
 parseSubgraphRef =
     ( SubgraphRef <$>
-      (reserved' "subgraph" *> parseId)
+      (dotLexer.reserved "subgraph" *> parseId)
     )
     <?> "subgraph ref"
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-parseEntityList :: Parser (Array Entity)
+parseEntityList :: Parser (List Entity)
 parseEntityList =
     ( (:) <$>
       parseEntity true <*> some (parseEntity false)
@@ -206,10 +207,10 @@ parseESubgraph first =
     )
     <?> "entity subgraph"
 
-parseEdgeType :: Parser EdgeType
+-- parseEdgeType :: Parser EdgeType
 parseEdgeType =
-    (   try (reservedOp' "->" *> pure DirectedEdge)
-    <|>     (reservedOp' "--" *> pure UndirectedEdge)
+    (   try (dotLexer.reservedOp "->" *> pure DirectedEdge)
+    <|>     (dotLexer.reservedOp "--" *> pure UndirectedEdge)
     )
     <?> "edge operator"
 
@@ -231,17 +232,17 @@ parsePort =
     )
     <?> "port"
 
-parsePortC :: Parser Port
+-- parsePortC :: Parser Port
 parsePortC =
     ( PortC <$>
-      (colon' *> parseCompass)
+      (dotLexer.colon *> parseCompass)
     )
     <?> "port (compass variant)"
 
 parsePortI :: Parser Port
 parsePortI =
     ( PortI <$>
-      (colon' *> parseId) <*> optionMaybe (colon' *> parseCompass)
+      (dotLexer.colon *> parseId) <*> optionMaybe (dotLexer.colon *> parseCompass)
     )
     <?> "port (id variant)"
 
@@ -249,7 +250,7 @@ parsePortI =
 
 -- parseCompass :: Parser Compass
 parseCompass =
-    (map (toLower >>> convert) identifier' >>= maybe err pure)
+    (map (toLower >>> convert) dotLexer.identifier >>= maybe err pure)
     <?> "compass"
   where
     err = fail "invalid compass value" 
@@ -267,16 +268,16 @@ parseCompass =
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-parseAttributeList :: Parser (Array Attribute)
+parseAttributeList :: Parser (List Attribute)
 parseAttributeList =
-    (brackets' (parseAttribute `sepBy` optional comma') <|> pure [])
+    (dotLexer.brackets (parseAttribute `sepBy` optional dotLexer.comma) <|> pure [])
     <?> "attribute list"
 
 parseAttribute :: Parser Attribute
 parseAttribute =
     ( do
       id0 <- parseId
-      id1 <- optionMaybe (reservedOp' "=" *> parseId)
+      id1 <- optionMaybe (dotLexer.reservedOp "=" *> parseId)
       pure $ maybe (AttributeSetTrue id0) (AttributeSetValue id0) id1
     )
     <?> "attribute"
@@ -296,19 +297,19 @@ parseId =
 -- parseNameId :: Parser Id
 parseNameId =
     ( NameId <$>
-      identifier'
+      dotLexer.identifier
     )
     <?> "name"
 
-parseStringId :: Parser Id
+-- parseStringId :: Parser Id
 parseStringId =
     ( StringId <$>
-      lexeme' (char '"' *> manyTill stringChar (char '"'))
+      dotLexer.lexeme (char '"' *> manyTill stringChar (char '"'))
     )
     <?> "string literal"
   where
     stringChar =
-        (try (string "\\\"" *> pure '"') <|> noneOf "\"")
+        (try (string "\\\"" *> pure '"') <|> noneOf ['\"'])
         <?> "string character"
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -316,19 +317,19 @@ parseStringId =
 -- | DOT allows floating point numbers having no whole part like @.123@,
 -- | and so does JavaScript's parseFloat which underlies the PureScript readFloat function
 -- | which enables the PureScript implementation to simplify this parser
-parseFloatId :: Parser Id
+-- parseFloatId :: Parser Id
 parseFloatId =
   ( FloatId <$>
-    float'
+    dotLexer.float
   )
   <?> "float"
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
-parseIntegerId :: Parser Id
+-- parseIntegerId :: Parser Id
 parseIntegerId =
     ( IntegerId <$>
-      integer'
+      dotLexer.integer
     )
     <?> "integer"
 
@@ -337,7 +338,7 @@ parseIntegerId =
 parseXmlId :: Parser Id
 parseXmlId =
     ( XmlId <$>
-      angles' parseXml
+      dotLexer.angles parseXml
     )
     <?> "XML id"
 
@@ -365,7 +366,7 @@ parseXmlTag =
     )
     <?> "XML tag"
 
-parseXmlTagOpen :: Parser (Tuple XmlName (Array XmlAttribute))
+parseXmlTagOpen :: Parser (Tuple XmlName (List XmlAttribute))
 parseXmlTagOpen =
     ( Tuple <$>
       (char '<' *> parseXmlName) <*> (parseXmlAttributes <* char '>')
@@ -397,7 +398,7 @@ parseXmlText =
     )
     <?> "XML text"
 
-parseXmlAttributes :: Parser (Array XmlAttribute)
+parseXmlAttributes :: Parser (List XmlAttribute)
 parseXmlAttributes =
     many parseXmlAttribute
     <?> "XML attribute list"
@@ -405,21 +406,21 @@ parseXmlAttributes =
 parseXmlAttribute :: Parser XmlAttribute
 parseXmlAttribute =
     ( XmlAttribute <$>
-      (parseXmlName <* reservedOp' "=") <*> parseXmlAttributeValue
+      (parseXmlName <* dotLexer.reservedOp "=") <*> parseXmlAttributeValue
     )
     <?> "XML attribute"
 
 parseXmlAttributeValue :: Parser XmlAttributeValue
 parseXmlAttributeValue =
     ( XmlAttributeValue <$>
-      stringLiteral'
+      dotLexer.stringLiteral
     )
     <?> "XML attribute value"
 
 parseXmlName :: Parser XmlName
 parseXmlName =
     ( XmlName <$>
-      ((:) <$> c0 <*> (many c1 <* whiteSpace'))
+      ((:) <$> c0 <*> (many c1 <* dotLexer.whiteSpace))
     )
     <?> "XML name"
   where
@@ -448,53 +449,9 @@ semiSep p       = sepBy p semi
 commaSep1 p     = sepBy1 p comma
 semiSep1 p      = sepBy1 p semi
 
-
-angles'        :: Parser a -> Parser a
-angles'        = dotParser.angles
-
-braces'        :: Parser a -> Parser a
-braces'        = dotParser.braces
-
-brackets'      :: Parser a -> Parser a
-brackets'      = dotParser.brackets
-
-colon'         :: Parser String
-colon'         = dotParser.colon
-
-comma'         :: Parser String
-comma'         = dotParser.comma
-
-float'         :: Parser String
-float'         = dotParser.float
-
-identifier'    :: Parser String
-identifier'    = dotParser.identifier
-
-integer'       :: Parser Int
-integer'       = dotParser.integer
-
-lexeme'        :: Parser a -> Parser a
-lexeme'        = dotParser.lexeme
-
-reserved'      :: String -> Parser Unit
-reserved'      = dotParser.reserved
-
-reservedOp'    :: String -> Parser Unit
-reservedOp'    = dotParser.reservedOp
-
-semi'          :: Parser String
-semi'          = dotParser.semi
-
-stringLiteral' :: Parser String
-stringLiteral' = dotParser.stringLiteral
-
-whiteSpace'    :: Parser Unit
-whiteSpace'    = dotParser.whiteSpace
-
 -- | A lexer for the dot language.
-dotParser :: TokenParser
-dotParser = makeTokenParser dotDef
-
+dotLexer :: TokenParser
+dotLexer = makeTokenParser dotDef
 
 -- | The language definition for the language dot.
 dotDef :: LanguageDef
