@@ -13,6 +13,7 @@ import Language.Dot.Syntax
 import Prelude
 import Text.Parsing.Parser
 import Text.Parsing.Parser.Combinators
+import Text.Parsing.Parser.Combinators (between) as P
 import Text.Parsing.Parser.Language
 import Text.Parsing.Parser.String
 import Text.Parsing.Parser.Token
@@ -26,6 +27,7 @@ import Data.Map (fromFoldable, lookup) as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, maybe)
 import Data.String (CodePoint, codePointFromChar, toLower, uncons)
 import Data.String as String
+import Data.String.CodeUnits (fromCharArray)
 import Data.Tuple (Tuple(..))
 import Global (readFloat)
 import Text.Parsing.Parser.Combinators (between) as Parser
@@ -53,9 +55,9 @@ preprocess file =
     unlines :: forall f. Foldable f => f String -> String
     unlines = intercalate "\n"
 
-    lines :: String -> Array String
-    lines "" = []
-    lines s = String.split (String.Pattern "\n") s
+    lines :: String -> List String
+    lines "" = Nil
+    lines s = fromFoldable $ String.split (String.Pattern "\n") s
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
@@ -80,13 +82,6 @@ parseGraphDirectedness =
     <|> (dotLexer.reserved "digraph" *> pure DirectedGraph)
     )
     <?> "graph directedness"
-
--- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
--- parseDottedList :: SParser LispVal -> SParser LispVal
--- parseDottedList pars = do
---   init <- pars `endBy` whiteSpace
---   last <- char '.' *> whiteSpace *> pars
---   return $ DottedList init last
 
 parseStatementList :: Parser (List Statement) -> Parser (List Statement)
 parseStatementList p = 
@@ -287,14 +282,14 @@ parseAttribute =
 parseId :: Parser Id
 parseId =
     (   try parseNameId
-    <|> try parseStringId
+    -- <|> try parseStringId
     <|> try parseFloatId
     <|> try parseIntegerId
     <|>     parseXmlId
     )
     <?> "id"
 
--- parseNameId :: Parser Id
+parseNameId :: Parser Id
 parseNameId =
     ( NameId <$>
       dotLexer.identifier
@@ -302,15 +297,14 @@ parseNameId =
     <?> "name"
 
 -- parseStringId :: Parser Id
-parseStringId =
-    ( StringId <$>
-      dotLexer.lexeme (char '"' *> manyTill stringChar (char '"'))
-    )
-    <?> "string literal"
-  where
-    stringChar =
-        (try (string "\\\"" *> pure '"') <|> noneOf ['\"'])
-        <?> "string character"
+-- parseStringId =
+--     ( StringId <$>
+--       dotLexer.lexeme $ quotes 
+--     )
+--     <?> "string literal"
+
+-- quotes :: forall m a. Monad m => ParserT String m a -> ParserT String m a
+-- quotes = P.between (string "\"") (string "\"")
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
@@ -319,6 +313,7 @@ parseStringId =
 -- | which enables the PureScript implementation to simplify this parser
 -- parseFloatId :: Parser Id
 parseFloatId =
+  dotLexer.lexeme 
   ( FloatId <$>
     dotLexer.float
   )
@@ -417,16 +412,17 @@ parseXmlAttributeValue =
     )
     <?> "XML attribute value"
 
-parseXmlName :: Parser XmlName
+parseXmlName :: Parser String XmlName
 parseXmlName =
-    ( XmlName <$>
-      ((:) <$> c0 <*> (many c1 <* dotLexer.whiteSpace))
+    ( XmlName <$> chars
     )
     <?> "XML name"
   where
+    chars :: Parser String String
+    chars = fromCharArray <$> (cons <$> c0 <*> (many c1) <* testTokenParser.whiteSpace)
     c0 = letter   <|> cs
     c1 = alphaNum <|> cs
-    cs = oneOf "-.:_"
+    cs = oneOf ['-','.',':','_']
 
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 
@@ -437,6 +433,7 @@ parens p        = Parser.between (string "(") (string ")") p
 braces p        = Parser.between (string "{") (string "}") p
 angles p        = Parser.between (string "<") (string ">") p
 brackets p      = Parser.between (string "[") (string "]") p
+quoted p        = Parser.between (string "\"") (string "\"") 
 
 semi            = string ";"
 comma           = string ","

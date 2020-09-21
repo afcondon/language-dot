@@ -2,10 +2,11 @@
 
 module Language.Dot.Syntax where
 
+import Data.List (List)
 import Data.Maybe (Maybe)
 
 data Graph
-  = Graph GraphStrictness GraphDirectedness (Maybe Id) (Array Statement)
+  = Graph GraphStrictness GraphDirectedness (Maybe Id) (List Statement)
   -- deriving (Eq, Ord, Show)
 
 data GraphStrictness
@@ -20,16 +21,16 @@ data GraphDirectedness
 
 data Id
   = NameId    String
-  | StringId  String
+  -- | StringId  String
   | IntegerId Int
   | FloatId   Number
   | XmlId     Xml
   -- deriving (Eq, Ord, Show)
 
 data Statement
-  = NodeStatement       NodeId (Array Attribute)
-  | EdgeStatement       (Array Entity) (Array Attribute)
-  | AttributeStatement  AttributeStatementType (Array Attribute)
+  = NodeStatement       NodeId (List Attribute)
+  | EdgeStatement       (List Entity) (List Attribute)
+  | AttributeStatement  AttributeStatementType (List Attribute)
   | AssignmentStatement Id Id
   | SubgraphStatement   Subgraph
   -- deriving (Eq, Ord, Show)
@@ -60,7 +61,7 @@ data Compass
   -- deriving (Eq, Ord, Show)
 
 data Subgraph
-  = NewSubgraph (Maybe Id) (Array Statement)
+  = NewSubgraph (Maybe Id) (List Statement)
   | SubgraphRef Id
   -- deriving (Eq, Ord, Show)
 
@@ -76,8 +77,8 @@ data EdgeType
   -- deriving (Eq, Ord, Show, Enum, Bounded)
 
 data Xml
-  = XmlEmptyTag XmlName (Array XmlAttribute)
-  | XmlTag      XmlName (Array XmlAttribute) (Array Xml)
+  = XmlEmptyTag XmlName (List XmlAttribute)
+  | XmlTag      XmlName (List XmlAttribute) (List Xml)
   | XmlText     String
   -- deriving (Eq, Ord, Show)
 
